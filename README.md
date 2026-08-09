@@ -6,4 +6,4 @@
 
 60초 후 유사도 점수가 볼륨이 됨
 
-접속 링크: 배포 후 추가
+접속 링크: https://modopsyourgame-lgtm.github.io/volume-drawing-match/
