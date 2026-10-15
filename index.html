@@ -75,9 +75,15 @@
   .big:active{transform:translate(6px,6px);box-shadow:0 0 0 var(--ink)}
 
   /* ---------- play ---------- */
+  .time-controls{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  .time-controls button{border:2px solid var(--ink);background:var(--cream);padding:4px 7px;font-weight:800;cursor:pointer}
+  .time-controls button.active{background:var(--amber)}
+  .live-score{font-size:12px;font-weight:800;color:var(--amber);min-width:5em}
+  .brush-cursor{position:absolute;z-index:3;pointer-events:none;border:2px solid var(--ink);border-radius:50%;box-shadow:0 0 0 1px #fff;transform:translate(-50%,-50%);display:none}
+  .brush-cursor.eraser{border-style:dashed;background:rgba(255,255,255,.35)}
   .timerbar{
-    display:flex;align-items:center;gap:14px;
-    padding:10px 16px;background:var(--teal-900);border-bottom:3px solid var(--ink);
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:8px 12px;background:var(--teal-900);border-bottom:3px solid var(--ink);
   }
   .timerbar .lab{font-size:11px;font-weight:800;letter-spacing:.16em;white-space:nowrap;color:var(--amber)}
   .track{
@@ -203,6 +209,7 @@
         <span class="lab">남은 시간</span>
         <div class="track"><div class="fill" id="timeFill"></div><div class="notches"></div></div>
         <span class="clock mono" id="clock">60.0s</span>
+        <div class="time-controls"><button id="unlimitedBtn" type="button">시간제한 없음</button><button data-add="10" type="button">+10초</button><button data-add="30" type="button">+30초</button><button data-add="60" type="button">+1분</button><button id="liveBtn" type="button">실시간 점수 보기</button><output id="liveScore" class="live-score" hidden>0점</output></div>
       </div>
       <div class="split">
         <div class="pane">
@@ -210,6 +217,7 @@
           <div class="board">
             <div class="sheet">
               <canvas id="userSheet" width="480" height="480"></canvas>
+              <div id="brushCursor" class="brush-cursor" aria-hidden="true"></div>
               <button class="ghost" id="clearBtn">전부 지우기</button>
             </div>
           </div>
@@ -320,10 +328,15 @@
   }
 
   /* ============ 그리기 ============ */
+  let unlimited=false, liveEnabled=false, lastLive=0;
+  const cursor=$("brushCursor");
+  function updateCursorSize(){const px=size*userSheet.getBoundingClientRect().width/SIZE;cursor.style.width=px+"px";cursor.style.height=px+"px";cursor.classList.toggle("eraser",erasing);}
+  function moveCursor(e){const r=userSheet.getBoundingClientRect();cursor.style.left=(e.clientX-r.left)+"px";cursor.style.top=(e.clientY-r.top)+"px";updateCursorSize();cursor.style.display=canDraw?"block":"none";}
+  function updateLiveScore(force=false){if(!liveEnabled||!canDraw)return;const now=performance.now();if(!force&&now-lastLive<180)return;lastLive=now;$("liveScore").textContent=similarity()+"점";}
   let drawing=false, canDraw=false, erasing=false, size=6;
-  $("sizeSlider").addEventListener("input",()=>{size=+$("sizeSlider").value;$("sizeValue").textContent=size;});
-  $("penBtn").addEventListener("click",()=>{erasing=false;$("penBtn").classList.add("active");$("eraserBtn").classList.remove("active");$("sizeLabel").textContent="펜 크기";});
-  $("eraserBtn").addEventListener("click",()=>{erasing=true;$("eraserBtn").classList.add("active");$("penBtn").classList.remove("active");$("sizeLabel").textContent="지우개 크기";});
+  $("sizeSlider").addEventListener("input",()=>{size=+$("sizeSlider").value;$("sizeValue").textContent=size;updateCursorSize();});
+  $("penBtn").addEventListener("click",()=>{erasing=false;$("penBtn").classList.add("active");$("eraserBtn").classList.remove("active");$("sizeLabel").textContent="펜 크기";updateCursorSize();});
+  $("eraserBtn").addEventListener("click",()=>{erasing=true;$("eraserBtn").classList.add("active");$("penBtn").classList.remove("active");$("sizeLabel").textContent="지우개 크기";updateCursorSize();});
   function pos(e){
     const r=userSheet.getBoundingClientRect();
     return [ (e.clientX-r.left)/r.width*SIZE, (e.clientY-r.top)/r.height*SIZE ];
@@ -332,19 +345,27 @@
 
   userSheet.addEventListener("pointerdown",e=>{
     if(!canDraw) return;
+    moveCursor(e);
     drawing=true; userSheet.setPointerCapture(e.pointerId);
     uc.globalCompositeOperation=erasing?"destination-out":"source-over";
     uc.lineWidth=size;
     const [x,y]=pos(e); uc.beginPath(); uc.moveTo(x,y); uc.lineTo(x+.01,y); uc.stroke();
   });
   userSheet.addEventListener("pointermove",e=>{
+    moveCursor(e);
     if(!drawing) return;
     const [x,y]=pos(e); uc.lineTo(x,y); uc.stroke();
+    updateLiveScore();
   });
+  userSheet.addEventListener("pointerenter",moveCursor);
+  userSheet.addEventListener("pointerleave",()=>cursor.style.display="none");
   ["pointerup","pointercancel","pointerleave"].forEach(t=>
-    userSheet.addEventListener(t,()=>{drawing=false;}));
-  $("clearBtn").addEventListener("click",()=>{ if(canDraw) uc.clearRect(0,0,SIZE,SIZE); });
+    userSheet.addEventListener(t,()=>{drawing=false;updateLiveScore(true);}));
+  $("clearBtn").addEventListener("click",()=>{ if(canDraw){uc.clearRect(0,0,SIZE,SIZE);updateLiveScore(true);} });
   $("submitBtn").addEventListener("click",()=>{if(canDraw) finish();});
+  $("unlimitedBtn").addEventListener("click",()=>{if(!canDraw)return;unlimited=!unlimited;$("unlimitedBtn").classList.toggle("active",unlimited);if(!unlimited)endAt=performance.now()+DURATION*1000;});
+  document.querySelectorAll("[data-add]").forEach(b=>b.addEventListener("click",()=>{if(!canDraw)return;if(unlimited){unlimited=false;$("unlimitedBtn").classList.remove("active");endAt=performance.now();}endAt+=Number(b.dataset.add)*1000;}));
+  $("liveBtn").addEventListener("click",()=>{liveEnabled=!liveEnabled;$("liveBtn").classList.toggle("active",liveEnabled);$("liveScore").hidden=!liveEnabled;if(liveEnabled)updateLiveScore(true);});
 
   /* ============ 유사도 계산 ============ */
   const N=64;
@@ -420,11 +441,14 @@
     uc.clearRect(0,0,SIZE,SIZE);
     uc.strokeStyle="#0a0a0a"; uc.lineWidth=size; uc.lineCap="round"; uc.lineJoin="round";
     drawTarget();
+    unlimited=false;$("unlimitedBtn").classList.remove("active");$("liveScore").textContent="0점";
     canDraw=true; score.hidden=true; show(play);
     endAt=performance.now()+DURATION*1000;
     loopTimer();
   }
   function loopTimer(){
+    if(!canDraw)return;
+    if(unlimited){timeFill.style.transform="scaleX(1)";clock.textContent="무제한";raf=requestAnimationFrame(loopTimer);return;}
     const left=Math.max(0,(endAt-performance.now())/1000);
     timeFill.style.transform="scaleX("+(left/DURATION)+")";
     clock.textContent=left.toFixed(1)+"s";
@@ -433,7 +457,7 @@
   }
   function finish(){
     if(!canDraw) return;
-    cancelAnimationFrame(raf); canDraw=false; drawing=false;
+    cancelAnimationFrame(raf); canDraw=false; drawing=false;cursor.style.display="none";
     const target=similarity();
     score.hidden=false; reel.textContent="00"; verdict.innerHTML="&nbsp;";
     land(target); return;
