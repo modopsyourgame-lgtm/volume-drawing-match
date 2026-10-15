@@ -389,12 +389,12 @@
     return o;
   }
   function similarity(){
-    let A=blur(blur(mask(userSheet),3),2), B=blur(blur(mask(targetSheet),3),2);
+    let A=blur(mask(userSheet),1), B=blur(mask(targetSheet),1);
     let inter=0,sa=0,sb=0;
     for(let i=0;i<N*N;i++){ inter+=Math.min(A[i],B[i]); sa+=A[i]; sb+=B[i]; }
     if(sa < N*N*0.004) return 0;                 // 거의 안 그림
     const dice = (sa+sb)>0 ? (2*inter)/(sa+sb) : 0;
-    return Math.max(0, Math.min(100, Math.round(Math.pow(dice,0.68)*116)));
+    return Math.round(100*Math.pow(Math.max(0,(dice-0.08)/0.92),1.25));
   }
 
   /* ============ 오디오 ============ */
